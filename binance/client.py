@@ -10,12 +10,21 @@ from .exceptions import BinanceAPIException, BinanceRequestException, BinanceWit
 
 
 class Client(object):
+    # The REST baseurl for testnet is "https://testnet.binancefuture.com"
+    # The Websocket baseurl for testnet is "wss://stream.binancefuture.com"
+    # The base endpoint for main-net is: https://fapi.binance.com
+    # The baseurl for websocket for main-net is wss://fstream.binance.com
 
     API_URL = 'https://api.binance.{}/api'
     WITHDRAW_API_URL = 'https://api.binance.{}/wapi'
     MARGIN_API_URL = 'https://api.binance.{}/sapi'
     WEBSITE_URL = 'https://www.binance.{}'
+
+    # Ashwin: Included base endpoint for testnet, for stream, look at websocket
     FUTURES_URL = 'https://fapi.binance.{}/fapi'
+    TESTNET_FUTURES_URL = 'https://testnet.binancefuture.{}/fapi'
+
+
     PUBLIC_API_VERSION = 'v1'
     PRIVATE_API_VERSION = 'v3'
     WITHDRAW_API_VERSION = 'v3'
@@ -57,6 +66,7 @@ class Client(object):
     ORDER_TYPE_STOP_LOSS_LIMIT = 'STOP_LOSS_LIMIT'
     ORDER_TYPE_TAKE_PROFIT = 'TAKE_PROFIT'
     ORDER_TYPE_TAKE_PROFIT_LIMIT = 'TAKE_PROFIT_LIMIT'
+    ORDER_TYPE_TAKE_PROFIT_MARKET = 'TAKE_PROFIT_MARKET'
     ORDER_TYPE_LIMIT_MAKER = 'LIMIT_MAKER'
 
     TIME_IN_FORCE_GTC = 'GTC'  # Good till cancelled
@@ -95,6 +105,8 @@ class Client(object):
         self.WEBSITE_URL = self.WEBSITE_URL.format(tld)
         self.FUTURES_URL = self.FUTURES_URL.format(tld)
 
+        self.TESTNET_FUTURES_URL = self.TESTNET_FUTURES_URL.format(tld)
+
         self.API_KEY = api_key
         self.API_SECRET = api_secret
         self.session = self._init_session()
@@ -125,8 +137,11 @@ class Client(object):
     def _create_website_uri(self, path):
         return self.WEBSITE_URL + '/' + path
 
-    def _create_futures_api_uri(self, path):
-        return self.FUTURES_URL + '/' + self.FUTURES_API_VERSION + '/' + path
+    def _create_futures_api_uri(self, path, TESTNETFLAG=False):
+        if TESTNETFLAG:
+            return self.TESTNET_FUTURES_URL + '/' + self.FUTURES_API_VERSION + '/' + path
+        else:
+            return self.FUTURES_URL + '/' + self.FUTURES_API_VERSION + '/' + path
 
     def _generate_signature(self, data):
 
@@ -194,6 +209,10 @@ class Client(object):
             del(kwargs['data'])
 
         self.response = getattr(self.session, method)(uri, **kwargs)
+
+        # reset API VERSION to 'v1'
+        self.FUTURES_API_VERSION = 'v1'
+
         return self._handle_response()
 
     def _request_api(self, method, path, signed=False, version=PUBLIC_API_VERSION, **kwargs):
@@ -217,9 +236,19 @@ class Client(object):
         return self._request(method, uri, signed, **kwargs)
 
     def _request_futures_api(self, method, path, signed=False, **kwargs):
-        uri = self._create_futures_api_uri(path)
+        # Set to False as default
+        TESTNETFLAG = False
+        params = kwargs.get('data', None)
+        if params and isinstance(params, dict):
+            if 'TESTNETFLAG' in params.keys():
+                TESTNETFLAG = params['TESTNETFLAG']
+            if 'version' in params.keys():
+                self.FUTURES_API_VERSION = params['version']
 
-        return self._request(method, uri, signed, True, **kwargs)
+        uri = self._create_futures_api_uri(path, TESTNETFLAG=TESTNETFLAG)
+
+        print(uri)
+        return self._request(method, uri, signed, True, data=params)
 
     def _handle_response(self):
         """Internal helper for handling API responses from the Binance server.

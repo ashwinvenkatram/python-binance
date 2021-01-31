@@ -64,6 +64,13 @@ class BinanceSocketManager(threading.Thread):
 
     STREAM_URL = 'wss://stream.binance.com:9443/'
     FSTREAM_URL = 'wss://fstream.binance.com/'
+    TESTNET_FUTURES_STREAM_URL = 'wss://stream.binancefuture.com/'
+
+    CONTRACT_PERPETUAL = "perpetual"
+    CONTRACT_CURRENT_MONTH = "current_month"
+    CONTRACT_NEXT_MONTH = "next_month"
+    CONTRACT_CURRENT_QUARTER = "current_quarter"
+    CONTRACT_NEXT_QUARTER = "next_quarter"
 
     WEBSOCKET_DEPTH_5 = '5'
     WEBSOCKET_DEPTH_10 = '10'
@@ -71,7 +78,7 @@ class BinanceSocketManager(threading.Thread):
 
     DEFAULT_USER_TIMEOUT = 30 * 60  # 30 minutes
 
-    def __init__(self, client, user_timeout=DEFAULT_USER_TIMEOUT):
+    def __init__(self, client, user_timeout=DEFAULT_USER_TIMEOUT, TESTNETFLAG=False):
         """Initialise the BinanceSocketManager
 
         :param client: Binance API client
@@ -89,6 +96,8 @@ class BinanceSocketManager(threading.Thread):
         self._account_callbacks = {'user': None, 'margin': None}
         # Isolated margin sockets will be opened under the 'symbol' name
 
+        self._TESTNETFLAG = TESTNETFLAG
+
     def _start_socket(self, path, callback, prefix='ws/'):
         if path in self._conns:
             return False
@@ -103,11 +112,16 @@ class BinanceSocketManager(threading.Thread):
         self._conns[path] = connectWS(factory, context_factory)
         return path
 
-    def _start_futures_socket(self, path, callback, prefix='stream?streams='):
+    def _start_futures_socket(self, path, callback, prefix='stream?streams=', TESTNETFLAG=False):
         if path in self._conns:
             return False
 
-        factory_url = self.FSTREAM_URL + prefix + path
+        if TESTNETFLAG:
+            factory_url = self.TESTNET_FUTURES_STREAM_URL + prefix + path
+        else:
+            factory_url = self.FSTREAM_URL + prefix + path
+
+        # factory_url = self.FSTREAM_URL + prefix + path
         factory = BinanceClientFactory(factory_url)
         factory.protocol = BinanceClientProtocol
         factory.callback = callback
@@ -339,6 +353,22 @@ class BinanceSocketManager(threading.Thread):
         """
         return self._start_socket(symbol.lower() + '@aggTrade', callback)
 
+    def futures_start_kline_socket(self, symbol, callback, interval=Client.KLINE_INTERVAL_1MINUTE):
+        """Start a websocket for symbol futures kline data. Pushes every 250ms
+
+        :param symbol: required
+        :type symbol: str
+        :param callback: callback function to handle messages
+        :type callback: function
+        :param interval: not required. Default set to 1 minute KLINE
+        :type interval: str
+
+        :returns: connection key string if successful, False otherwise
+        """
+        socket_name = '{}@kline_{}'.format(symbol.lower(), interval)
+
+        return self._start_futures_socket(socket_name, callback, TESTNETFLAG=self._TESTNETFLAG)
+
     def start_symbol_ticker_socket(self, symbol, callback):
         """Start a websocket for a symbol's ticker data
 
@@ -448,7 +478,7 @@ class BinanceSocketManager(threading.Thread):
             }
         """
         stream_name = '@markPrice@1s' if fast else '@markPrice'
-        return self._start_futures_socket(symbol.lower() + stream_name, callback)
+        return self._start_futures_socket(symbol.lower() + stream_name, callback, TESTNETFLAG=self._TESTNETFLAG)
 
     def start_all_mark_price_socket(self, callback, fast=True):
         """Start a websocket for all futures mark price data
@@ -472,7 +502,7 @@ class BinanceSocketManager(threading.Thread):
             ]
         """
         stream_name = '!markPrice@arr@1s' if fast else '!markPrice@arr'
-        return self._start_futures_socket(stream_name, callback)
+        return self._start_futures_socket(stream_name, callback, TESTNETFLAG=self._TESTNETFLAG)
 
     def start_symbol_ticker_futures_socket(self, symbol, callback):
         """Start a websocket for a symbol's ticker data
@@ -495,7 +525,7 @@ class BinanceSocketManager(threading.Thread):
                 }
             ]
         """
-        return self._start_futures_socket(symbol.lower() + '@bookTicker', callback)
+        return self._start_futures_socket(symbol.lower() + '@bookTicker', callback, TESTNETFLAG=self._TESTNETFLAG)
 
     def start_all_ticker_futures_socket(self, callback):
         """Start a websocket for all ticker data
@@ -519,7 +549,7 @@ class BinanceSocketManager(threading.Thread):
         """
 
 
-        return self._start_futures_socket('!bookTicker', callback)
+        return self._start_futures_socket('!bookTicker', callback, TESTNETFLAG=self._TESTNETFLAG)
 
     def start_symbol_book_ticker_socket(self, symbol, callback):
         """Start a websocket for the best bid or ask's price or quantity for a specified symbol.
